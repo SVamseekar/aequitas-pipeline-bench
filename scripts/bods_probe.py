@@ -37,30 +37,35 @@ active_trips = set(trips.trip_id)
 out["n_trips_total_active"] = len(active_trips)
 out["t_calendar_trips_s"] = round(time.time() - t1, 1)
 
-agg = {}
+parts_list = []
 rows = 0
+bad_times = single_digit_hours = over_24h = 0
 t2 = time.time()
 reader = pd.read_csv(z.open("stop_times.txt"), usecols=["trip_id", "departure_time", "stop_id"],
                      dtype=str, chunksize=2_000_000)
 for i, ch in enumerate(reader):
     rows += len(ch)
     ch = ch[ch.trip_id.isin(active_trips) & ch.departure_time.notna()]
-    hh = ch.departure_time.str.slice(0, 2).astype(int)
-    mm = ch.departure_time.str.slice(3, 5).astype(int)
+    parts = ch.departure_time.str.split(":", n=2, expand=True)
+    hh = pd.to_numeric(parts[0], errors="coerce")
+    mm = pd.to_numeric(parts[1], errors="coerce")
+    bad_times += int((hh.isna() | mm.isna()).sum())
+    single_digit_hours += int((parts[0].str.len() == 1).sum())
+    over_24h += int((hh >= 24).sum())
     mins = hh * 60 + mm
+    ok = mins.notna()
+    ch, mins = ch[ok], mins[ok].astype(int)
     g = pd.DataFrame({"stop_id": ch.stop_id, "m": mins, "ev": (mins >= 19 * 60).astype(int)}).groupby("stop_id").agg(
         n=("m", "size"), first=("m", "min"), last=("m", "max"), ev=("ev", "sum"))
-    for sid, r in g.iterrows():
-        a = agg.get(sid)
-        if a is None:
-            agg[sid] = [r.n, r["first"], r["last"], r.ev]
-        else:
-            a[0] += r.n; a[1] = min(a[1], r["first"]); a[2] = max(a[2], r["last"]); a[3] += r.ev
+    parts_list.append(g)
     if limit_chunks and i + 1 >= limit_chunks:
         break
 out["stop_times_rows_read"] = rows
+out["unparseable_times"] = bad_times
+out["single_digit_hour_times"] = single_digit_hours
+out["times_at_or_after_24h"] = over_24h
 out["t_stop_times_s"] = round(time.time() - t2, 1)
-res = pd.DataFrame.from_dict(agg, orient="index", columns=["departures", "first_min", "last_min", "evening"])
+res = pd.concat(parts_list).groupby(level=0).agg(departures=("n", "sum"), first_min=("first", "min"), last_min=("last", "max"), evening=("ev", "sum"))
 res.index.name = "stop_id"
 res.to_parquet("bods_stop_departures.parquet")
 out["n_stops_with_departures"] = len(res)

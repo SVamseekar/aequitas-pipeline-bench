@@ -1,0 +1,31 @@
+{
+ "zip_bytes": 1933098717,
+ "members": {
+  "agency.txt": 51868,
+  "stops.txt": 20956639,
+  "routes.txt": 328493,
+  "calendar.txt": 95374,
+  "calendar_dates.txt": 4645743,
+  "trips.txt": 229305257,
+  "shapes.txt": 5512119823,
+  "frequencies.txt": 189,
+  "feed_info.txt": 191,
+  "stop_times.txt": 5915213415
+ },
+ "ref_date": "20261125",
+ "n_services_active": 1397,
+ "n_trips_total_active": 446765,
+ "t_calendar_trips_s": 1.8,
+ "stop_times_rows_read": 4000000,
+ "unparseable_times": 0,
+ "single_digit_hour_times": 0,
+ "times_at_or_after_24h": 8074,
+ "t_stop_times_s": 6.7,
+ "n_stops_with_departures": 210975,
+ "total_departures": 1010337,
+ "stops_evening_isolated": 130918,
+ "output_parquet_bytes": 1981409,
+ "peak_rss_mb": 1081.7,
+ "disk_free_gb_end": 25.1,
+ "t_total_s": 8.6
+}

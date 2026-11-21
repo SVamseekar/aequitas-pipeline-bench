@@ -1,6 +1,10 @@
 name: feasibility
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'all | country | bods'
+        default: all
 permissions:
   contents: read
 env:
@@ -8,6 +12,7 @@ env:
   UV_TORCH_BACKEND: cpu
 jobs:
   country-build:
+    if: inputs.only == 'all' || inputs.only == 'country'
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +70,7 @@ jobs:
             out/*.time
             out/build_tail.log
   bods-stream:
+    if: inputs.only == 'all' || inputs.only == 'bods'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
