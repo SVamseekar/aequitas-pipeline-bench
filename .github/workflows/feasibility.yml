@@ -1,0 +1,100 @@
+name: feasibility
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  AEQUITAS_SHA: a79c8e0e7b1b830e9add42a9c2bd6752ed98bcee
+  UV_TORCH_BACKEND: cpu
+jobs:
+  country-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        country: [ireland, netherlands]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: SVamseekar/aequitas
+          ref: ${{ env.AEQUITAS_SHA }}
+          path: aequitas
+      - uses: astral-sh/setup-uv@v6
+      - name: Machine
+        run: |
+          mkdir -p out
+          { nproc; free -b; df -B1 /; grep -m1 'model name' /proc/cpuinfo; } | tee out/machine.txt
+          df -B1 --output=used / | tail -1 > out/disk_used_start.txt
+      - name: Sync dependencies
+        run: |
+          cd aequitas
+          start=$(date +%s)
+          /usr/bin/time -v uv sync --frozen --no-dev 2> ../out/sync.time
+          echo $(( $(date +%s) - start )) > ../out/sync_seconds.txt
+          du -sb .venv | cut -f1 > ../out/venv_bytes.txt
+      - name: Build ${{ matrix.country }}
+        continue-on-error: true
+        run: |
+          scripts/sample.sh out/samples.txt & SAMPLER=$!
+          cd aequitas
+          start=$(date +%s)
+          set +e
+          /usr/bin/time -v uv run --no-sync aequitas ${{ matrix.country }} > ../out/build.log 2> ../out/build.time
+          echo "exit=$?" > ../out/build_exit.txt
+          echo $(( $(date +%s) - start )) > ../out/build_seconds.txt
+          kill $SAMPLER
+          du -sb data > ../out/data_bytes.txt 2>/dev/null
+          find data -type f -printf '%s %p\n' | sort -n | tail -60 > ../out/data_files.txt
+          tail -c 20000 ../out/build.time > /dev/null
+      - name: Summarise
+        if: always()
+        run: |
+          tail -60 out/build.log > out/build_tail.log 2>/dev/null || true
+          grep -E 'Elapsed|Maximum resident|User time|System time|Exit status' out/build.time out/sync.time || true
+          cat out/build_exit.txt out/build_seconds.txt out/data_bytes.txt || true
+          sort -k2 -n out/samples.txt | tail -1 || true
+          sort -k3 -n out/samples.txt | tail -1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.country }}
+          path: |
+            out/*.txt
+            out/*.time
+            out/build_tail.log
+  bods-stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Machine
+        run: |
+          mkdir -p out
+          { nproc; free -b; df -B1 /; } | tee out/machine.txt
+      - name: Install
+        run: pip install pandas pyarrow
+      - name: Download BODS all-England GTFS
+        run: |
+          start=$(date +%s)
+          curl -sSL --retry 3 -o bods.zip https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/all/
+          echo $(( $(date +%s) - start )) > out/download_seconds.txt
+          ls -l bods.zip | tee out/zip_ls.txt
+          sha256sum bods.zip | tee out/zip_sha256.txt
+      - name: Stream stop_times
+        run: |
+          scripts/sample.sh out/samples.txt & SAMPLER=$!
+          /usr/bin/time -v python scripts/bods_probe.py bods.zip 2> out/probe.time | tail -40
+          kill $SAMPLER
+          cp bods_probe_result.json out/
+          grep -E 'Elapsed|Maximum resident' out/probe.time
+          df -B1 / | tee out/disk_end.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bods-stream
+          path: out/
